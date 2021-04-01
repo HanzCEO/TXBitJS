@@ -2,6 +2,11 @@
 Helper module to interact with TXBit APIs.
 Read more about the documentation here: https://apidocs.txbit.io/
 
+# Installation
+```
+npm i --save txbitjs
+```
+
 # Test It!
 1. Configure `test.js` file with your credentials
 2. Run this:
