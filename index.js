@@ -1,5 +1,6 @@
 const axios = require("axios").default;
 const url = require("url");
+const crypto = require("crypto");
 const base = "https://api.txbit.io/api/";
 
 const EndpointType = [ "public/", "market/", "account/" ];
@@ -16,17 +17,31 @@ const axiosInstances = {
  * @param {string} endpointType - The endpoint major section
  * @param {string} endpointName - The endpoint method to call. Just put the name
  * @param {object} args - An array of mixed content, can be filled with anything
+ * @param {string} apiSecret - Your API Secret key for signing hmac
+ * @param {string} apiKey - Your API Key
  */
-async function processApi(endpointType, endpointName, args) {
+async function processApi(endpointType, endpointName, args, apiSecret="", apiKey="") {
 	if (!EndpointType.includes(endpointType)) return false;
 
-	let instance = axiosInstances[EndpointType.indexOf(endpointType)];
+	let instance = axiosInstances[endpointType];
 	let params = new url.URLSearchParams(args);
 
-	let response = await instance.get(`${endpointName}?${params.toString()}`);
+	if (apiKey) params.append("apikey", apiKey),
+		params.append("nonce", Date.now());
+
+	let response = await instance.get(`${endpointName}?${params.toString()}`, {
+		headers: {
+			apisign: crypto.createHmac("sha512", apiSecret)
+					.update(
+						instance.defaults.baseURL +
+						endpointName +
+						`?${params.toString()}`
+					).digest("hex").toUpperCase()
+		}
+	});
 	let data = response.data;
 
-	if (!data.success) throw new Error(data.success);
+	if (!data.success) throw new Error(data.message);
 	else return data.result;
 }
 
@@ -37,13 +52,15 @@ async function processApi(endpointType, endpointName, args) {
  * @returns {Proxy}
  */
 function Public() {
-	let get = function(target, key) {
-		return async function wrapper(args) {
-			return await processApi("public/", key, args);
+	let handler = {
+		get: function(target, key) {
+			return async function wrapper(args) {
+				return await processApi("public/", key, args);
+			}
 		}
 	}
 
-	return new Proxy({}, get);
+	return new Proxy({}, handler);
 }
 
 /**
@@ -53,14 +70,18 @@ function Public() {
  * @function Market
  * @returns {Proxy}
  */
-function Market() {
-	let get = function(target, key) {
-		return async function wrapper(args) {
-			return await processApi("market/", key, args);
+function Market(apiSecret, apiKey) {
+	let get = {
+		get: function(target, key) {
+			return async function wrapper(args) {
+				return await processApi("market/", key, args, apiSecret, apiKey);
+			}
 		}
 	}
 
-	return new Proxy({}, get);
+	return new Proxy({
+		apiKey: apiKey
+	}, get);
 }
 
 /**
@@ -70,14 +91,18 @@ function Market() {
  * @function Account
  * @returns {Proxy}
  */
-function Account() {
-	let get = function(target, key) {
-		return async function wrapper(args) {
-			return await processApi("account/", key, args);
+function Account(apiSecret, apiKey) {
+	let get = {
+		get: function(target, key) {
+			return async function wrapper(args) {
+				return await processApi("account/", key, args, apiSecret, apiKey);
+			}
 		}
 	}
 
-	return new Proxy({}, get);
+	return new Proxy({
+		apiKey: apiKey
+	}, get);
 }
 
 exports.Public = Public;
